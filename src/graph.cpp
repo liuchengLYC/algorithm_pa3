@@ -16,8 +16,7 @@ void Graph::addEdge(int u, int v, int baseCost) {
     // TODO: add edge (u, v) between GCell u and v with baseCosts to the graph
 }
 
-std::vector<int> dijkstra(const Graph &g, int source,
-                          vector<int> *outPrev) {
+std::vector<int> dijkstra(const Graph &g, int source, vector<int> *outPrev) {
     const int n = g.numVertices();
     vector<int> dist(n, INF);
     vector<int> prev(n, -1);

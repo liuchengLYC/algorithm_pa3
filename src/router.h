@@ -2,8 +2,8 @@
 #ifndef ROUTER_H
 #define ROUTER_H
 
-#include "grid.h"
 #include "graph.h"
+#include "grid.h"
 #include "types.h"
 #include <vector>
 
@@ -14,7 +14,7 @@ struct Segment {
 
 struct RoutedNet {
     std::string name;
-    std::vector<Segment> segments;  // continuous path in order
+    std::vector<Segment> segments; // continuous path in order
 };
 
 struct RoutingResult {
@@ -30,10 +30,7 @@ Graph buildGraphFromGrid(const Grid &grid);
 std::vector<int> computeVertexCost(const Grid &grid);
 
 /// Run routing for all nets.  Students will mainly implement this.
-RoutingResult runRouting(
-    Grid &grid,
-    const std::vector<Net> &nets
-);
+RoutingResult runRouting(Grid &grid, const std::vector<Net> &nets);
 
 bool writeRouteFile(const std::string &filename, const RoutingResult &result);
 

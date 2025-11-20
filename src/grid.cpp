@@ -16,7 +16,8 @@ void Grid::resize(int xSize, int ySize) {
 }
 
 int Grid::gcellIndex(int l, int j, int i) const {
-    if (l < 0 || l >= numLayers() || j < 0 || j >= xSize_ || i < 0 || i >= ySize_)
+    if (l < 0 || l >= numLayers() || j < 0 || j >= xSize_ || i < 0 ||
+        i >= ySize_)
         throw std::out_of_range("Invalid gcell coordinate");
     return l * (xSize_ * ySize_) + i * xSize_ + j;
 }
@@ -45,9 +46,7 @@ int Grid::demand(int l, int j, int i) const {
     return demand_[gcellIndex(l, j, i)];
 }
 
-void Grid::resetDemand() {
-    std::fill(demand_.begin(), demand_.end(), 0);
-}
+void Grid::resetDemand() { std::fill(demand_.begin(), demand_.end(), 0); }
 
 void Grid::addDemandForNetGCell(int /*netId*/, int l, int j, int i) {
     ++demand_[gcellIndex(l, j, i)];

@@ -16,10 +16,7 @@ bool parseCapFile(const std::string &filename, Grid &grid);
 bool parseNetFile(const std::string &filename, std::vector<Net> &nets);
 
 /// Convenience wrapper: parse both files.
-bool parseInputFiles(
-    const std::string &capFilename,
-    const std::string &netFilename,
-    ParsedInput &out
-);
+bool parseInputFiles(const std::string &capFilename,
+                     const std::string &netFilename, ParsedInput &out);
 
 #endif // PARSER_H

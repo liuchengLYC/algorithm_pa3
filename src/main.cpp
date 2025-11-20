@@ -5,8 +5,7 @@
 
 int main(int argc, char **argv) {
     if (argc != 7) {
-        std::cerr << "Usage: "
-                  << argv[0]
+        std::cerr << "Usage: " << argv[0]
                   << " --cap case.cap --net case.net --out case.route\n";
         return 1;
     }
@@ -15,9 +14,12 @@ int main(int argc, char **argv) {
     // simple argument parsing (TA implemented)
     for (int i = 1; i < argc; i += 2) {
         std::string opt = argv[i];
-        if (opt == "--cap") capFile = argv[i+1];
-        else if (opt == "--net") netFile = argv[i+1];
-        else if (opt == "--out") outFile = argv[i+1];
+        if (opt == "--cap")
+            capFile = argv[i + 1];
+        else if (opt == "--net")
+            netFile = argv[i + 1];
+        else if (opt == "--out")
+            outFile = argv[i + 1];
     }
 
     ParsedInput input;

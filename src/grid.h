@@ -3,16 +3,16 @@
 #define GRID_H
 
 #include "types.h"
-#include <vector>
 #include <string>
+#include <vector>
 
 struct LayerInfo {
-    std::string name;      // e.g., "Metal1"
-    char direction;        // 'H' or 'V'
+    std::string name; // e.g., "Metal1"
+    char direction;   // 'H' or 'V'
 };
 
 class Grid {
-public:
+  public:
     Grid();
 
     // dimensions
@@ -41,12 +41,12 @@ public:
     void setHorizontalDistances(const std::vector<int> &distances);
     void setVerticalDistances(const std::vector<int> &distances);
 
-    const LayerInfo& layerInfo(int l) const { return layers_[l]; }
+    const LayerInfo &layerInfo(int l) const { return layers_[l]; }
     void setLayerInfo(int l, const LayerInfo &info);
 
     void resize(int xSize, int ySize);
 
-private:
+  private:
     int xSize_ = 0;
     int ySize_ = 0;
 
@@ -54,8 +54,8 @@ private:
     std::vector<int> capacity_;
     std::vector<int> demand_;
 
-    std::vector<int> W_;  // size xSize-1
-    std::vector<int> H_;  // size ySize-1
+    std::vector<int> W_; // size xSize-1
+    std::vector<int> H_; // size ySize-1
 
     int wlViaCost_ = 0;
     LayerInfo layers_[2];
