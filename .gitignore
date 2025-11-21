@@ -3,3 +3,6 @@ outputs/
 utilities/
 doc/
 .vscode/
+.DS_Store
+test.cpp
+a.out

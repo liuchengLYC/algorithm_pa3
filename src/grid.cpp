@@ -9,6 +9,7 @@ void Grid::resize(int xSize, int ySize) {
     xSize_ = xSize;
     ySize_ = ySize;
     const int total = numLayers() * xSize_ * ySize_;
+    gridlSize_ = total;
     capacity_.assign(total, 0);
     demand_.assign(total, 0);
     W_.assign(xSize_ > 0 ? xSize_ - 1 : 0, 0);

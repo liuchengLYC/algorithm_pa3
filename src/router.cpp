@@ -4,14 +4,14 @@
 #include <cctype>
 #include <fstream>
 #include <iostream>
+#include <utility>
+using namespace std;
 
 namespace {
 
 constexpr int OVERFLOW_WEIGHT = 100000;
 
-int totalVertices(const Grid &grid) {
-    return grid.numLayers() * grid.xSize() * grid.ySize();
-}
+int totalVertices(const Grid &grid) { return grid.gridSize(); }
 
 char normalizeDir(char d) {
     return static_cast<char>(std::toupper(static_cast<unsigned char>(d)));
@@ -52,9 +52,33 @@ void updateDemandAlongPath(Grid &grid, int netId,
 
 } // namespace
 
-Graph buildGraphFromGrid(const Grid &grid) {
-    Graph g(totalVertices(grid));
+Router::Router() = default;
 
+Router::Router(const Grid &grid) {
+    const int total = totalVertices(grid);
+    dist.assign(total, INF);
+    prev.assign(total, -1);
+    stamp.assign(total, 0);
+    costs.assign(total, INF);
+}
+
+Graph Router::buildGraphFromGrid(const Grid &grid) {
+    Graph g(totalVertices(grid));
+    auto gi = [&](int x, int y, int z) { return grid.gcellIndex(x, y, z); };
+    for (int lay = 0; lay < 2; lay++) {
+        for (int j = 0; j < grid.xSize() - 1; j++) {
+            for (int i = 0; i < grid.ySize() - 1; i++) {
+                if (lay)
+                    g.addEdge(gi(0, j, i), gi(1, j, i), grid.wlViaCost());
+                if (grid.layerInfo(i).direction == 'H')
+                    g.addEdge(gi(lay, j, i), gi(lay, j + 1, i),
+                              grid.horizontalDist(j));
+                else
+                    g.addEdge(gi(lay, j, i), gi(lay, j, i + 1),
+                              grid.verticalDist(i));
+            }
+        }
+    }
     // TODO: Build the routing graph by iterating over layers/rows/cols and
     // calling grid.gcellIndex(layer, col, row) to convert 3D coordinates into
     // vertex ids. Use grid.layerInfo(layer).direction to determine whether the
@@ -67,24 +91,53 @@ Graph buildGraphFromGrid(const Grid &grid) {
     return g;
 }
 
-std::vector<int> computeVertexCost(const Grid &grid) {
+void Router::computeVertexCost(const Grid &grid, vector<int> &costs) {
     const int total = totalVertices(grid);
-    std::vector<int> costs(total, 0);
 
     // TODO: Translate the 1D vertex index back to (layer, col, row) with
     // grid.fromIndex(idx) and penalize vertices whose demand would overflow
     // their capacity. Use grid.demand() / grid.capacity() and OVERFLOW_WEIGHT
     // as the per-unit overflow penalty.
-
-    return costs;
 }
 
-RoutingResult runRouting(Grid &grid, const std::vector<Net> &nets) {
+int Router::dijkstra(const Graph &g, int source, int target) {
+    // dist -> distance(or cost) in dijkstra, cost -> cost to step on gcell
+    fill(dist.begin(), dist.end(), INF);
+    fill(prev.begin(), prev.end(), -1);
+    using pii = pair<int, int>;
+    auto cmp = [&](pii p, pii q) { return p.second > q.second; };
+    priority_queue<pii, vector<pii>, decltype(cmp)> pq(cmp);
+    pq.push({source, costs[source]});
+    dist[source] = costs[source];
+    while (!pq.empty()) {
+        auto [v, c] = pq.top();
+        pq.pop();
+        if (c != dist[v])
+            continue;
+        else if (v == target)
+            return c;
+        for (auto &e : g.adj(v)) {
+            int nc = c + costs[e.to] + e.baseCost;
+            if (nc < dist[e.to]) {
+                pq.push({e.to, nc});
+                prev[e.to] = v;
+                dist[e.to] = nc;
+            }
+        }
+    }
+    return INF;
+}
+
+RoutingResult Router::runRouting(Grid &grid, const std::vector<Net> &nets) {
     RoutingResult result;
     result.nets.reserve(nets.size());
 
     grid.resetDemand();
     Graph graph = buildGraphFromGrid(grid);
+
+    vector<int> predecessors(totalVertices(grid), -1);
+    vector<int> costs(totalVertices(grid), INF);
+    // TODO: integrate the per-vertex penalty into your search.
 
     for (size_t netIdx = 0; netIdx < nets.size(); ++netIdx) {
         const Net &net = nets[netIdx];
@@ -94,9 +147,7 @@ RoutingResult runRouting(Grid &grid, const std::vector<Net> &nets) {
         int src = grid.gcellIndex(net.pin1.layer, net.pin1.col, net.pin1.row);
         int dst = grid.gcellIndex(net.pin2.layer, net.pin2.col, net.pin2.row);
 
-        std::vector<int> predecessors;
-        std::vector<int> costs = computeVertexCost(grid);
-        // TODO: integrate the per-vertex penalty into your search.
+        computeVertexCost(grid, costs);
 
         std::vector<Coord3D> path;
         // TODO: Run Dijkstra on `graph` from src -> dst (see graph.h for Graph
@@ -123,7 +174,8 @@ RoutingResult runRouting(Grid &grid, const std::vector<Net> &nets) {
     return result;
 }
 
-bool writeRouteFile(const std::string &filename, const RoutingResult &result) {
+bool Router::writeRouteFile(const std::string &filename,
+                            const RoutingResult &result) {
     std::ofstream fout(filename);
     if (!fout)
         return false;

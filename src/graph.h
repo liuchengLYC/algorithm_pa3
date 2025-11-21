@@ -28,13 +28,6 @@ class Graph {
     std::vector<std::vector<Edge>> adj_;
 };
 
-/// A minimal Dijkstra interface that students can call or modify.
-/// They can also write their own version if they prefer.
-std::vector<int>
-dijkstra(const Graph &g, int source,
-         std::vector<int> *outPrev = nullptr // optional predecessor tree
-);
-
 const int INF = std::numeric_limits<int>::max() / 4;
 
 #endif // GRAPH_H

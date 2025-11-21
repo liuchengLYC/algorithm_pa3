@@ -19,6 +19,7 @@ class Grid {
     int numLayers() const { return 2; }
     int xSize() const { return xSize_; }
     int ySize() const { return ySize_; }
+    int gridSize() const { return gridlSize_; }
 
     // index mapping between (l, j, i) and a flat GCell index
     int gcellIndex(int l, int j, int i) const;
@@ -49,6 +50,7 @@ class Grid {
   private:
     int xSize_ = 0;
     int ySize_ = 0;
+    int gridlSize_ = 0;
 
     // size: [2 * xSize * ySize]
     std::vector<int> capacity_;

@@ -28,9 +28,10 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    RoutingResult result = runRouting(input.grid, input.nets);
+    Router router;
+    RoutingResult result = router.runRouting(input.grid, input.nets);
 
-    if (!writeRouteFile(outFile, result)) {
+    if (!router.writeRouteFile(outFile, result)) {
         std::cerr << "Error: failed to write route file.\n";
         return 1;
     }
