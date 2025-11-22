@@ -27,9 +27,11 @@ class Grid {
 
     // capacity & demand on GCells
     int capacity(int l, int j, int i) const;
+    int capacity(Coord3D c) const;
     void setCapacity(int l, int j, int i, int cap);
 
     int demand(int l, int j, int i) const;
+    int demand(Coord3D c) const;
     void resetDemand();
     void addDemandForNetGCell(int netId, int l, int j, int i);
     int demandByIndex(int idx) const;

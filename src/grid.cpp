@@ -39,12 +39,20 @@ int Grid::capacity(int l, int j, int i) const {
     return capacity_[gcellIndex(l, j, i)];
 }
 
+int Grid::capacity(Coord3D c) const {
+    return capacity_[gcellIndex(c.layer, c.col, c.row)];
+}
+
 void Grid::setCapacity(int l, int j, int i, int cap) {
     capacity_[gcellIndex(l, j, i)] = cap;
 }
 
 int Grid::demand(int l, int j, int i) const {
     return demand_[gcellIndex(l, j, i)];
+}
+
+int Grid::demand(Coord3D c) const {
+    return demand_[gcellIndex(c.layer, c.col, c.row)];
 }
 
 void Grid::resetDemand() { std::fill(demand_.begin(), demand_.end(), 0); }

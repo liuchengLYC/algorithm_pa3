@@ -65,11 +65,12 @@ Router::Router(const Grid &grid) {
 Graph Router::buildGraphFromGrid(const Grid &grid) {
     Graph g(totalVertices(grid));
     auto gi = [&](int x, int y, int z) { return grid.gcellIndex(x, y, z); };
-    for (int lay = 0; lay < 2; lay++) {
+    for (int lay = 0; lay < grid.numLayers(); lay++) {
         for (int j = 0; j < grid.xSize() - 1; j++) {
             for (int i = 0; i < grid.ySize() - 1; i++) {
-                if (lay)
-                    g.addEdge(gi(0, j, i), gi(1, j, i), grid.wlViaCost());
+                if (lay > 0)
+                    g.addEdge(gi(lay - 1, j, i), gi(lay, j, i),
+                              grid.wlViaCost());
                 if (grid.layerInfo(i).direction == 'H')
                     g.addEdge(gi(lay, j, i), gi(lay, j + 1, i),
                               grid.horizontalDist(j));
@@ -93,7 +94,15 @@ Graph Router::buildGraphFromGrid(const Grid &grid) {
 
 void Router::computeVertexCost(const Grid &grid, vector<int> &costs) {
     const int total = totalVertices(grid);
-
+    auto cfunc = [&](int x) {
+        int dm = grid.demand(grid.fromIndex(x)),
+            cap = grid.capacity(grid.fromIndex(x)), del = cap - dm;
+        return ((dm > cap) ? OVERFLOW_WEIGHT : 0) +
+               ((del < 100) ? (del * del - 100 * del) : 0);
+    };
+    for (int i = 0; i < total; i++) {
+        costs[i] = cfunc(i);
+    }
     // TODO: Translate the 1D vertex index back to (layer, col, row) with
     // grid.fromIndex(idx) and penalize vertices whose demand would overflow
     // their capacity. Use grid.demand() / grid.capacity() and OVERFLOW_WEIGHT
