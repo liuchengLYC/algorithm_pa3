@@ -15,7 +15,7 @@ constexpr int OVERFLOW_WEIGHT = 100000;
 int totalVertices(const Grid &grid) { return grid.gridSize(); }
 
 char normalizeDir(char d) {
-    return static_cast<char>(std::toupper(static_cast<unsigned char>(d)));
+    return static_cast<char>(toupper(static_cast<unsigned char>(d)));
 }
 
 vector<Coord3D> reconstructPath(const Grid &grid, int src, int dst,
@@ -102,7 +102,7 @@ vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
 }
 
 void updateDemandAlongPath(Grid &grid, int netId,
-                           const std::vector<Coord3D> &coords) {
+                           const vector<Coord3D> &coords) {
     for (const Coord3D &c : coords) {
         grid.addDemandForNetGCell(netId, c.layer, c.col, c.row);
     }
@@ -215,7 +215,7 @@ void Router::dijkstra(const Graph &g, int source, int target) {
     }
 }
 
-RoutingResult Router::runRouting(Grid &grid, const std::vector<Net> &nets) {
+RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     RoutingResult result;
     result.nets.reserve(nets.size());
 
@@ -245,8 +245,7 @@ RoutingResult Router::runRouting(Grid &grid, const std::vector<Net> &nets) {
         // no legal path exists.
 
         if (path.empty()) {
-            std::cerr << "Warning: using fallback routing for " << net.name
-                      << "\n";
+            cerr << "Warning: using fallback routing for " << net.name << "\n";
             path = buildFallbackPath(grid, net);
         }
 
@@ -266,9 +265,9 @@ RoutingResult Router::runRouting(Grid &grid, const std::vector<Net> &nets) {
     return result;
 }
 
-bool Router::writeRouteFile(const std::string &filename,
+bool Router::writeRouteFile(const string &filename,
                             const RoutingResult &result) {
-    std::ofstream fout(filename);
+    ofstream fout(filename);
     if (!fout)
         return false;
 
