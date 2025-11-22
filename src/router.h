@@ -41,7 +41,7 @@ class Router {
 
     /// A minimal Dijkstra interface that students can call or modify.
     /// They can also write their own version if they prefer.
-    int dijkstra(const Graph &g, int source, int target);
+    void dijkstra(const Graph &g, int source, int target);
 
   private:
     std::vector<int> dist;

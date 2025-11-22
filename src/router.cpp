@@ -176,7 +176,7 @@ void Router::computeVertexCost(const Grid &grid, vector<int> &costs) {
     auto cfunc = [&](int x) {
         int dm = grid.demand(grid.fromIndex(x)),
             cap = grid.capacity(grid.fromIndex(x)), del = cap - dm;
-        return ((dm > cap) ? OVERFLOW_WEIGHT : 0) +
+        return ((dm > cap) ? OVERFLOW_WEIGHT * (dm - cap) : 0) +
                ((del < 10) ? (del * del - 20 * del + 100) * 500 : 0);
     };
     for (int i = 0; i < total; i++) {
@@ -188,7 +188,7 @@ void Router::computeVertexCost(const Grid &grid, vector<int> &costs) {
     // as the per-unit overflow penalty.
 }
 
-int Router::dijkstra(const Graph &g, int source, int target) {
+void Router::dijkstra(const Graph &g, int source, int target) {
     // dist -> distance(or cost) in dijkstra, cost -> cost to step on gcell
     fill(dist.begin(), dist.end(), INF);
     fill(prev.begin(), prev.end(), -1);
@@ -203,7 +203,7 @@ int Router::dijkstra(const Graph &g, int source, int target) {
         if (c != dist[v])
             continue;
         else if (v == target)
-            return c;
+            return;
         for (auto &e : g.adj(v)) {
             int nc = c + costs[e.to] + e.baseCost;
             if (nc < dist[e.to]) {
@@ -213,7 +213,6 @@ int Router::dijkstra(const Graph &g, int source, int target) {
             }
         }
     }
-    return INF;
 }
 
 RoutingResult Router::runRouting(Grid &grid, const std::vector<Net> &nets) {
@@ -237,7 +236,7 @@ RoutingResult Router::runRouting(Grid &grid, const std::vector<Net> &nets) {
         int dst = grid.gcellIndex(net.pin2.layer, net.pin2.col, net.pin2.row);
 
         computeVertexCost(grid, costs);
-        int routecost = dijkstra(graph, src, dst);
+        dijkstra(graph, src, dst);
 
         vector<Coord3D> path = reconstructPath(grid, src, dst, prev);
         // TODO: Run Dijkstra on `graph` from src -> dst (see graph.h for Graph

@@ -68,25 +68,26 @@ for k in "${CASES[@]}"; do
     fi
 
     echo "[Router] ${cap} + ${net} -> ${route}"
+    "${ROUTER}" --cap "${cap}" --net "${net}" --out "${route}"
 
-    tmp_time="$(mktemp)"
-    /usr/bin/time -v "${ROUTER}" --cap "${cap}" --net "${net}" --out "${route}" \
-        2> "${tmp_time}"
+    # tmp_time="$(mktemp)"
+    # /usr/bin/time -v "${ROUTER}" --cap "${cap}" --net "${net}" --out "${route}" \
+    #     2> "${tmp_time}"
 
     # Parse numbers
-    elapsed=$(grep -F "Elapsed (wall clock) time" "${tmp_time}" | awk -F': ' '{print $2}')
-    maxrss_kb=$(grep -F "Maximum resident set size" "${tmp_time}" | awk -F': ' '{print $2}')
+    # elapsed=$(grep -F "Elapsed (wall clock) time" "${tmp_time}" | awk -F': ' '{print $2}')
+    # maxrss_kb=$(grep -F "Maximum resident set size" "${tmp_time}" | awk -F': ' '{print $2}')
 
-    if [[ -n "${maxrss_kb}" ]]; then
-        maxrss_mb=$(awk "BEGIN {printf \"%.2f\", ${maxrss_kb}/1024.0}")
-    else
-        maxrss_mb="N/A"
-    fi
+    # if [[ -n "${maxrss_kb}" ]]; then
+    #     maxrss_mb=$(awk "BEGIN {printf \"%.2f\", ${maxrss_kb}/1024.0}")
+    # else
+    #     maxrss_mb="N/A"
+    # fi
 
-    rm -f "${tmp_time}"
+    # rm -f "${tmp_time}"
 
-    echo "[case${k}] Time: ${elapsed}"
-    echo "[case${k}] Max RSS: ${maxrss_mb} MB"
+    # echo "[case${k}] Time: ${elapsed}"
+    # echo "[case${k}] Max RSS: ${maxrss_mb} MB"
 
     echo "[Evaluator]"
     ${EVAL} "${cap}" "${net}" "${route}" || {
