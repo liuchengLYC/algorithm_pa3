@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    Router router;
+    Router router(input.grid);
     RoutingResult result = router.runRouting(input.grid, input.nets);
 
     if (!router.writeRouteFile(outFile, result)) {

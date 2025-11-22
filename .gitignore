@@ -6,3 +6,6 @@ doc/
 .DS_Store
 test.cpp
 a.out
+t.txt
+plot/
+result

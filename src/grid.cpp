@@ -57,6 +57,7 @@ int Grid::demand(Coord3D c) const {
 
 void Grid::resetDemand() { std::fill(demand_.begin(), demand_.end(), 0); }
 
+// netid is useful when rerouting
 void Grid::addDemandForNetGCell(int /*netId*/, int l, int j, int i) {
     ++demand_[gcellIndex(l, j, i)];
 }

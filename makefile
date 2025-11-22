@@ -1,4 +1,7 @@
 CXX       := g++
+# CXXFLAGS  := -std=c++17 -g -O0 -Wall -Wextra -pedantic \
+#               -fsanitize=address,undefined -fno-omit-frame-pointer
+# LDFLAGS   := -fsanitize=address,undefined -fno-omit-frame-pointer
 CXXFLAGS  := -std=c++17 -O2 -Wall -Wextra -pedantic
 
 SRC_DIR   := src
@@ -14,7 +17,7 @@ DEPS      := $(OBJS:.o=.d)
 all: $(TARGET)
 
 $(TARGET): $(OBJS) | $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $(OBJS) -o $@ $(LDFLAGS)
 
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@

@@ -4,6 +4,7 @@
 #include <cctype>
 #include <fstream>
 #include <iostream>
+#include <queue>
 #include <utility>
 using namespace std;
 
@@ -17,9 +18,21 @@ char normalizeDir(char d) {
     return static_cast<char>(std::toupper(static_cast<unsigned char>(d)));
 }
 
-std::vector<Coord3D> reconstructPath(const Grid &grid, int sourceIdx,
-                                     int targetIdx,
-                                     const std::vector<int> &prev) {
+vector<Coord3D> reconstructPath(const Grid &grid, int src, int dst,
+                                const vector<int> &prev) {
+    vector<Coord3D> tmp;
+    int cur = dst;
+    while (cur != -1 && cur != src) {
+        tmp.push_back(grid.fromIndex(cur));
+        cur = prev[cur];
+    }
+    if (cur != src)
+        return {};
+    else {
+        tmp.push_back(grid.fromIndex(src));
+        reverse(tmp.begin(), tmp.end());
+        return tmp;
+    }
     // TODO: Starting from targetIdx, follow the `prev` parent array (produced
     // by dijkstra) until you reach sourceIdx or hit -1. You should store each
     // vertex index you visit so you can reverse the order later. Use
@@ -27,10 +40,56 @@ std::vector<Coord3D> reconstructPath(const Grid &grid, int sourceIdx,
     // col, row}. The resulting vector should go from the source coordinate to
     // the target coordinate. Return an empty vector if the target is
     // unreachable (i.e., prev chain does not lead back to the source).
-    return {};
 }
 
-std::vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
+vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
+    // Coord3D gcell2 = (grid.layerInfo(net.pin1.layer).direction == 'H')
+    //                      ? {net.pin1.layer, net.pin1.col, net.pin2.row}
+    //                      : {net.pin1.layer, net.pin2.col, net.pin2.row};
+    // vector<Coord3D> ans = {
+    //     net.pin2, {net.pin2.layer, gcell2.col, gcell2.row}, gcell2,
+    //     net.pin1};
+    // return ans;
+
+    vector<Coord3D> ans;
+    char dir = grid.layerInfo(net.pin1.layer).direction;
+    int dx = (net.pin1.col < net.pin2.col) ? 1 : -1,
+        dy = (net.pin1.row < net.pin2.row) ? 1 : -1;
+
+    Coord3D cur = net.pin1;
+    ans.push_back(cur);
+    if (dir == 'H') {
+        while (cur.col != net.pin2.col) {
+            cur.col += dx;
+            ans.push_back(cur);
+        }
+        cur.layer ^= 1;
+        ans.push_back(cur);
+        while (cur.row != net.pin2.row) {
+            cur.row += dy;
+            ans.push_back(cur);
+        }
+        if (cur.layer != net.pin2.layer) {
+            cur.layer ^= 1;
+            ans.push_back(cur);
+        }
+    } else {
+        while (cur.row != net.pin2.row) {
+            cur.row += dy;
+            ans.push_back(cur);
+        }
+        cur.layer ^= 1;
+        ans.push_back(cur);
+        while (cur.col != net.pin2.col) {
+            cur.col += dx;
+            ans.push_back(cur);
+        }
+        if (cur.layer != net.pin2.layer) {
+            cur.layer ^= 1;
+            ans.push_back(cur);
+        }
+    }
+    return ans;
     // TODO: Produce a deterministic Manhattan-style backup route when Dijkstra
     // fails. Start from net.pin1 (source) and peek at
     // grid.layerInfo(layer).direction to decide whether you need to swap layers
@@ -40,7 +99,6 @@ std::vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
     // until you reach net.pin2. Whenever you change layer, append the
     // intermediate Coord3D so downstream code can emit via segments. Return the
     // ordered list of coordinates from source to target.
-    return {};
 }
 
 void updateDemandAlongPath(Grid &grid, int netId,
@@ -48,6 +106,26 @@ void updateDemandAlongPath(Grid &grid, int netId,
     for (const Coord3D &c : coords) {
         grid.addDemandForNetGCell(netId, c.layer, c.col, c.row);
     }
+}
+
+void path_to_seg(vector<Coord3D> &tmp) {
+    if (tmp.size() <= 2)
+        return;
+    vector<Coord3D> ans = {tmp[0]};
+    for (size_t i = 1; i < tmp.size() - 1; i++) {
+        if ((tmp[i - 1].col == tmp[i + 1].col &&
+             tmp[i - 1].row == tmp[i + 1].row) ||
+            (tmp[i - 1].row == tmp[i + 1].row &&
+             tmp[i - 1].layer == tmp[i + 1].layer) ||
+            (tmp[i - 1].layer == tmp[i + 1].layer &&
+             tmp[i - 1].col == tmp[i + 1].col))
+            continue;
+        else
+            ans.push_back(tmp[i]);
+        // ans.push_back(tmp[i]);
+    }
+    ans.push_back(tmp.back());
+    tmp = ans;
 }
 
 } // namespace
@@ -66,15 +144,16 @@ Graph Router::buildGraphFromGrid(const Grid &grid) {
     Graph g(totalVertices(grid));
     auto gi = [&](int x, int y, int z) { return grid.gcellIndex(x, y, z); };
     for (int lay = 0; lay < grid.numLayers(); lay++) {
-        for (int j = 0; j < grid.xSize() - 1; j++) {
-            for (int i = 0; i < grid.ySize() - 1; i++) {
+        for (int j = 0; j < grid.xSize(); j++) {
+            for (int i = 0; i < grid.ySize(); i++) {
                 if (lay > 0)
                     g.addEdge(gi(lay - 1, j, i), gi(lay, j, i),
                               grid.wlViaCost());
-                if (grid.layerInfo(i).direction == 'H')
+                if (grid.layerInfo(lay).direction == 'H' &&
+                    i < grid.ySize() - 1 && j < grid.xSize() - 1)
                     g.addEdge(gi(lay, j, i), gi(lay, j + 1, i),
                               grid.horizontalDist(j));
-                else
+                else if (i < grid.ySize() - 1 && j < grid.xSize() - 1)
                     g.addEdge(gi(lay, j, i), gi(lay, j, i + 1),
                               grid.verticalDist(i));
             }
@@ -98,7 +177,7 @@ void Router::computeVertexCost(const Grid &grid, vector<int> &costs) {
         int dm = grid.demand(grid.fromIndex(x)),
             cap = grid.capacity(grid.fromIndex(x)), del = cap - dm;
         return ((dm > cap) ? OVERFLOW_WEIGHT : 0) +
-               ((del < 100) ? (del * del - 100 * del) : 0);
+               ((del < 10) ? (del * del - 20 * del + 100) * 500 : 0);
     };
     for (int i = 0; i < total; i++) {
         costs[i] = cfunc(i);
@@ -143,13 +222,14 @@ RoutingResult Router::runRouting(Grid &grid, const std::vector<Net> &nets) {
 
     grid.resetDemand();
     Graph graph = buildGraphFromGrid(grid);
+    vector<Net> nnets = nets;
+    sort(nnets.begin(), nnets.end(), [&](Net x, Net y) {
+        return (abs(x.pin1.col - x.pin2.col) + abs(x.pin1.row - x.pin2.row)) >
+               (abs(y.pin1.col - y.pin2.col) + abs(y.pin1.row - y.pin2.row));
+    });
 
-    vector<int> predecessors(totalVertices(grid), -1);
-    vector<int> costs(totalVertices(grid), INF);
-    // TODO: integrate the per-vertex penalty into your search.
-
-    for (size_t netIdx = 0; netIdx < nets.size(); ++netIdx) {
-        const Net &net = nets[netIdx];
+    for (size_t netIdx = 0; netIdx < nnets.size(); ++netIdx) {
+        const Net &net = nnets[netIdx];
         RoutedNet routed;
         routed.name = net.name;
 
@@ -157,8 +237,9 @@ RoutingResult Router::runRouting(Grid &grid, const std::vector<Net> &nets) {
         int dst = grid.gcellIndex(net.pin2.layer, net.pin2.col, net.pin2.row);
 
         computeVertexCost(grid, costs);
+        int routecost = dijkstra(graph, src, dst);
 
-        std::vector<Coord3D> path;
+        vector<Coord3D> path = reconstructPath(grid, src, dst, prev);
         // TODO: Run Dijkstra on `graph` from src -> dst (see graph.h for Graph
         // usage). Use reconstructPath(grid, src, dst, predecessors) once you
         // have the parent array produced by dijkstra(...) and only fall back if
@@ -169,6 +250,9 @@ RoutingResult Router::runRouting(Grid &grid, const std::vector<Net> &nets) {
                       << "\n";
             path = buildFallbackPath(grid, net);
         }
+
+        updateDemandAlongPath(grid, netIdx, path);
+        path_to_seg(path);
 
         for (size_t i = 1; i < path.size(); ++i) {
             routed.segments.push_back(Segment{path[i - 1], path[i]});
