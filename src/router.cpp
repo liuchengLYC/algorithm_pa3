@@ -43,14 +43,6 @@ vector<Coord3D> reconstructPath(const Grid &grid, int src, int dst,
 }
 
 vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
-    // Coord3D gcell2 = (grid.layerInfo(net.pin1.layer).direction == 'H')
-    //                      ? {net.pin1.layer, net.pin1.col, net.pin2.row}
-    //                      : {net.pin1.layer, net.pin2.col, net.pin2.row};
-    // vector<Coord3D> ans = {
-    //     net.pin2, {net.pin2.layer, gcell2.col, gcell2.row}, gcell2,
-    //     net.pin1};
-    // return ans;
-
     vector<Coord3D> ans;
     char dir = grid.layerInfo(net.pin1.layer).direction;
     int dx = (net.pin1.col < net.pin2.col) ? 1 : -1,
@@ -174,8 +166,8 @@ Graph Router::buildGraphFromGrid(const Grid &grid) {
 void Router::computeVertexCost(const Grid &grid, vector<int> &costs) {
     const int total = totalVertices(grid);
     auto cfunc = [&](int x) {
-        int dm = grid.demand(grid.fromIndex(x)),
-            cap = grid.capacity(grid.fromIndex(x)), del = cap - dm;
+        int dm = grid.demandByIndex(x), cap = grid.capacity(grid.fromIndex(x)),
+            del = cap - dm;
         return ((dm > cap) ? OVERFLOW_WEIGHT * (dm - cap) : 0) +
                ((del < 10) ? (del * del - 20 * del + 100) * 500 : 0);
     };

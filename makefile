@@ -2,7 +2,7 @@ CXX       := g++
 # CXXFLAGS  := -std=c++17 -g -O0 -Wall -Wextra -pedantic \
 #               -fsanitize=address,undefined -fno-omit-frame-pointer
 # LDFLAGS   := -fsanitize=address,undefined -fno-omit-frame-pointer
-CXXFLAGS  := -std=c++17 -O2 -Wall -Wextra -pedantic
+CXXFLAGS  := -std=c++17 -O3 -march=native -flto -Wall -Wextra -pedantic
 
 SRC_DIR   := src
 BIN_DIR   := bin

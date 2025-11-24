@@ -11,11 +11,11 @@ set -euo pipefail
 
 # Parse argument (optional)
 if [[ $# -eq 0 ]]; then
-    CASES=(1 2 3 4 5 6)
+    CASES=(1 2 3 4 5 6 7)
 else
     arg="$1"
     if [[ "$arg" == "-a" ]]; then
-        CASES=(1 2 3 4 5 6)
+        CASES=(1 2 3 4 5 6 7)
     elif [[ "$arg" =~ ^-[0-9]+$ ]]; then
         arg="${arg:1}"
         CASES=($(echo "$arg" | grep -o .))
@@ -68,13 +68,13 @@ for k in "${CASES[@]}"; do
     fi
 
     echo "[Router] ${cap} + ${net} -> ${route}"
-    "${ROUTER}" --cap "${cap}" --net "${net}" --out "${route}"
+    time "${ROUTER}" --cap "${cap}" --net "${net}" --out "${route}"
 
     # tmp_time="$(mktemp)"
     # /usr/bin/time -v "${ROUTER}" --cap "${cap}" --net "${net}" --out "${route}" \
     #     2> "${tmp_time}"
 
-    # Parse numbers
+    # # Parse numbers
     # elapsed=$(grep -F "Elapsed (wall clock) time" "${tmp_time}" | awk -F': ' '{print $2}')
     # maxrss_kb=$(grep -F "Maximum resident set size" "${tmp_time}" | awk -F': ' '{print $2}')
 
