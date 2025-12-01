@@ -11,6 +11,7 @@ using namespace std;
 namespace {
 
 constexpr int OVERFLOW_WEIGHT = 100000;
+using Prefix2D = vector<vector<long long>>;
 
 int totalVertices(const Grid &grid) { return grid.gridSize(); }
 
@@ -114,10 +115,64 @@ void path_to_seg(vector<Coord3D> &tmp) {
             continue;
         else
             ans.push_back(tmp[i]);
-        // ans.push_back(tmp[i]);
     }
     ans.push_back(tmp.back());
     tmp = ans;
+}
+
+Prefix2D build_capacity_prefix(const Grid &grid) {
+    const int X = grid.xSize();
+    const int Y = grid.ySize();
+    const int L = grid.numLayers();
+
+    Prefix2D ps(Y + 1, vector<long long>(X + 1, 0));
+
+    for (int i = 0; i < Y; ++i) {
+        for (int j = 0; j < X; ++j) {
+            int capSum = 0;
+            for (int l = 0; l < L; ++l) {
+                capSum += grid.capacity(l, j, i);
+            }
+            ps[i + 1][j + 1] = ps[i + 1][j] + ps[i][j + 1] - ps[i][j] + capSum;
+        }
+    }
+    return ps;
+}
+
+double bbox_avg_capacity(const Prefix2D &ps, int xmin, int xmax, int ymin,
+                         int ymax) {
+    if (xmax < xmin || ymax < ymin)
+        return 0.0;
+
+    long long sum = ps[ymax + 1][xmax + 1] - ps[ymin][xmax + 1] -
+                    ps[ymax + 1][xmin] + ps[ymin][xmin];
+
+    long long area = 1LL * (xmax - xmin + 1) * (ymax - ymin + 1);
+    if (area <= 0)
+        return 0.0;
+
+    return static_cast<double>(sum) / static_cast<double>(area);
+}
+
+double netSortKey(const Prefix2D &ps, const Net &n) {
+    const double ratio = 100.0;
+    int dx = abs(n.pin1.col - n.pin2.col);
+    int dy = abs(n.pin1.row - n.pin2.row);
+    int dz = abs(n.pin1.layer - n.pin2.layer);
+    double man_dist = dx + dy + dz;
+
+    int xmin = min(n.pin1.col, n.pin2.col);
+    int xmax = max(n.pin1.col, n.pin2.col);
+    int ymin = min(n.pin1.row, n.pin2.row);
+    int ymax = max(n.pin1.row, n.pin2.row);
+
+    double avgCap = bbox_avg_capacity(ps, xmin, xmax, ymin, ymax);
+    if (avgCap <= 0.0)
+        avgCap = 1.0;
+
+    double difficulty = 1.0 / avgCap;
+
+    return man_dist + ratio * difficulty;
 }
 
 } // namespace
@@ -214,9 +269,12 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     grid.resetDemand();
     Graph graph = buildGraphFromGrid(grid);
     vector<Net> nnets = nets;
-    sort(nnets.begin(), nnets.end(), [&](Net x, Net y) {
-        return (abs(x.pin1.col - x.pin2.col) + abs(x.pin1.row - x.pin2.row)) >
-               (abs(y.pin1.col - y.pin2.col) + abs(y.pin1.row - y.pin2.row));
+    Prefix2D ps = build_capacity_prefix(grid);
+
+    sort(nnets.begin(), nnets.end(), [&](const Net &a, const Net &b) {
+        double ka = netSortKey(ps, a);
+        double kb = netSortKey(ps, b);
+        return (ka != kb) ? ka > kb : a.name < b.name;
     });
 
     for (size_t netIdx = 0; netIdx < nnets.size(); ++netIdx) {
@@ -262,7 +320,6 @@ bool Router::writeRouteFile(const string &filename,
     ofstream fout(filename);
     if (!fout)
         return false;
-
     for (const RoutedNet &net : result.nets) {
         fout << net.name << "\n";
         fout << "(\n";
