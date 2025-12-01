@@ -154,8 +154,8 @@ double bbox_avg_capacity(const Prefix2D &ps, int xmin, int xmax, int ymin,
     return static_cast<double>(sum) / static_cast<double>(area);
 }
 
-double netSortKey(const Prefix2D &ps, const Net &n) {
-    const double ratio = 100.0;
+pair<double, double> netSortKey(const Prefix2D &ps, const Net &n) {
+    const double ratio = 1000000.0;
     int dx = abs(n.pin1.col - n.pin2.col);
     int dy = abs(n.pin1.row - n.pin2.row);
     int dz = abs(n.pin1.layer - n.pin2.layer);
@@ -172,7 +172,7 @@ double netSortKey(const Prefix2D &ps, const Net &n) {
 
     double difficulty = 1.0 / avgCap;
 
-    return man_dist + ratio * difficulty;
+    return make_pair(man_dist, man_dist + ratio * difficulty);
 }
 
 } // namespace
@@ -272,9 +272,13 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     Prefix2D ps = build_capacity_prefix(grid);
 
     sort(nnets.begin(), nnets.end(), [&](const Net &a, const Net &b) {
-        double ka = netSortKey(ps, a);
-        double kb = netSortKey(ps, b);
-        return (ka != kb) ? ka > kb : a.name < b.name;
+        auto ka = netSortKey(ps, a);
+        auto kb = netSortKey(ps, b);
+        swap(ka.first, ka.second), swap(kb.first, kb.second);
+        if (ka.first != kb.first)
+            return ka.first > kb.first;
+        else
+            return ka.second > kb.second;
     });
 
     for (size_t netIdx = 0; netIdx < nnets.size(); ++netIdx) {
