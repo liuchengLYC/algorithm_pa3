@@ -10,3 +10,5 @@ t.txt
 plot/
 result
 evaluate/
+src/*.o
+src/*.d

@@ -7,17 +7,20 @@
 #include <queue>
 #include <utility>
 using namespace std;
+const bool if_reroute = true;
+
+#define debug false
 
 namespace {
 
-constexpr int OVERFLOW_WEIGHT = 100000;
+constexpr int OVERFLOW_WEIGHT = 300000;
 using Prefix2D = vector<vector<long long>>;
 
 int totalVertices(const Grid &grid) { return grid.gridSize(); }
 
-char normalizeDir(char d) {
-    return static_cast<char>(toupper(static_cast<unsigned char>(d)));
-}
+// char normalizeDir(char d) {
+//     return static_cast<char>(toupper(static_cast<unsigned char>(d)));
+// }
 
 vector<Coord3D> reconstructPath(const Grid &grid, int src, int dst,
                                 const vector<int> &prev) {
@@ -34,13 +37,14 @@ vector<Coord3D> reconstructPath(const Grid &grid, int src, int dst,
         reverse(tmp.begin(), tmp.end());
         return tmp;
     }
-    // TODO: Starting from targetIdx, follow the `prev` parent array (produced
-    // by dijkstra) until you reach sourceIdx or hit -1. You should store each
-    // vertex index you visit so you can reverse the order later. Use
-    // grid.fromIndex(idx) to convert each flat index back to a Coord3D {layer,
-    // col, row}. The resulting vector should go from the source coordinate to
-    // the target coordinate. Return an empty vector if the target is
-    // unreachable (i.e., prev chain does not lead back to the source).
+    // TODO: Starting from targetIdx, follow the `prev` parent array
+    // (produced by dijkstra) until you reach sourceIdx or hit -1. You
+    // should store each vertex index you visit so you can reverse the order
+    // later. Use grid.fromIndex(idx) to convert each flat index back to a
+    // Coord3D {layer, col, row}. The resulting vector should go from the
+    // source coordinate to the target coordinate. Return an empty vector if
+    // the target is unreachable (i.e., prev chain does not lead back to the
+    // source).
 }
 
 vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
@@ -83,21 +87,29 @@ vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
         }
     }
     return ans;
-    // TODO: Produce a deterministic Manhattan-style backup route when Dijkstra
-    // fails. Start from net.pin1 (source) and peek at
-    // grid.layerInfo(layer).direction to decide whether you need to swap layers
-    // so that the preferred direction (H or V) matches the axis you are about
-    // to walk. Move one gcell at a time by incrementing/decrementing
-    // Coord3D::col for horizontal moves and Coord3D::row for vertical moves
-    // until you reach net.pin2. Whenever you change layer, append the
-    // intermediate Coord3D so downstream code can emit via segments. Return the
-    // ordered list of coordinates from source to target.
+    // TODO: Produce a deterministic Manhattan-style backup route when
+    // Dijkstra fails. Start from net.pin1 (source) and peek at
+    // grid.layerInfo(layer).direction to decide whether you need to swap
+    // layers so that the preferred direction (H or V) matches the axis you
+    // are about to walk. Move one gcell at a time by
+    // incrementing/decrementing Coord3D::col for horizontal moves and
+    // Coord3D::row for vertical moves until you reach net.pin2. Whenever
+    // you change layer, append the intermediate Coord3D so downstream code
+    // can emit via segments. Return the ordered list of coordinates from
+    // source to target.
 }
 
 void updateDemandAlongPath(Grid &grid, int netId,
                            const vector<Coord3D> &coords) {
     for (const Coord3D &c : coords) {
         grid.addDemandForNetGCell(netId, c.layer, c.col, c.row);
+    }
+}
+
+void removeDemandAlongPath(Grid &grid, int netId,
+                           const vector<Coord3D> &coords) {
+    for (const Coord3D &c : coords) {
+        grid.removeDemandForNetGCell(netId, c.layer, c.col, c.row);
     }
 }
 
@@ -155,7 +167,7 @@ double bbox_avg_capacity(const Prefix2D &ps, int xmin, int xmax, int ymin,
 }
 
 pair<double, double> netSortKey(const Prefix2D &ps, const Net &n) {
-    const double ratio = 1000000.0;
+    const double ratio = 1000.0;
     int dx = abs(n.pin1.col - n.pin2.col);
     int dy = abs(n.pin1.row - n.pin2.row);
     int dz = abs(n.pin1.layer - n.pin2.layer);
@@ -185,6 +197,7 @@ Router::Router(const Grid &grid) {
     prev.assign(total, -1);
     stamp.assign(total, 0);
     costs.assign(total, INF);
+    cell_overflow.assign(total, 0);
 }
 
 Graph Router::buildGraphFromGrid(const Grid &grid) {
@@ -206,33 +219,24 @@ Graph Router::buildGraphFromGrid(const Grid &grid) {
             }
         }
     }
-    // TODO: Build the routing graph by iterating over layers/rows/cols and
-    // calling grid.gcellIndex(layer, col, row) to convert 3D coordinates into
-    // vertex ids. Use grid.layerInfo(layer).direction to determine whether the
-    // preferred track direction is horizontal or vertical, and add edges with
-    // g.addEdge(u, v, cost) using the wire length returned by
-    // grid.horizontalDist(col) / grid.verticalDist(row). Remember to add via
-    // edges between layers when grid.numLayers() > 1, using grid.wlViaCost() as
-    // the edge weight.
-
     return g;
 }
 
-void Router::computeVertexCost(const Grid &grid, vector<int> &costs) {
+void Router::computeVertexCost(const Grid &grid) {
     const int total = totalVertices(grid);
     auto cfunc = [&](int x) {
-        int dm = grid.demandByIndex(x), cap = grid.capacity(grid.fromIndex(x)),
-            del = cap - dm;
-        return ((dm > cap) ? OVERFLOW_WEIGHT * (dm - cap) : 0) +
-               ((del < 10) ? (del * del - 20 * del + 100) * 500 : 0);
+        constexpr double ALMOST_FULL_WEIGHT = 10000.0;
+        int dm = grid.demandByIndex(x), cap = grid.capacity(grid.fromIndex(x));
+        if (dm >= cap)
+            return (OVERFLOW_WEIGHT) * (dm - cap + 1);
+        int almost_flow_weight = static_cast<int>(
+            (static_cast<double>(dm) / static_cast<double>(cap)) *
+            ALMOST_FULL_WEIGHT);
+        return almost_flow_weight;
     };
     for (int i = 0; i < total; i++) {
         costs[i] = cfunc(i);
     }
-    // TODO: Translate the 1D vertex index back to (layer, col, row) with
-    // grid.fromIndex(idx) and penalize vertices whose demand would overflow
-    // their capacity. Use grid.demand() / grid.capacity() and OVERFLOW_WEIGHT
-    // as the per-unit overflow penalty.
 }
 
 void Router::dijkstra(const Graph &g, int source, int target) {
@@ -262,6 +266,81 @@ void Router::dijkstra(const Graph &g, int source, int target) {
     }
 }
 
+pair<int, int> Router::compute_gcell_overflow(const Grid &grid) {
+    const int total = totalVertices(grid);
+    int total_of = 0, max_of = -1;
+    for (int i = 0; i < total; i++) {
+        int dm = grid.demandByIndex(i), cap = grid.capacity(grid.fromIndex(i));
+        int of = max(dm - cap, 0);
+        cell_overflow[i] = of;
+        total_of += of;
+        max_of = max(max_of, of);
+    }
+    return make_pair(total_of, max_of);
+}
+
+void Router::compute_all_net_scores(const Grid &grid, const size_t netsize) {
+    // score function
+    auto scorefunc = [&](int of) { return of; };
+    if (!cell_score.size())
+        cell_score.resize(netsize);
+    for (size_t i = 0; i < netsize; i++) {
+        int score = 0;
+        for (auto &cell : net_path[i]) {
+            score += scorefunc(
+                cell_overflow[grid.gcellIndex(cell.layer, cell.col, cell.row)]);
+        }
+        cell_score[i] = make_pair(i, score);
+    }
+}
+
+vector<pair<int, int>> Router::select_ripup_nets(int topk, int threshold) {
+    if (topk != -1) {
+        vector<pair<int, int>> tmp = cell_score;
+        if (static_cast<size_t>(topk) > cell_score.size()) {
+            cerr << "Topk is too large" << '\n';
+            return tmp;
+        }
+        partial_sort(tmp.begin(), tmp.begin() + topk, tmp.end(),
+                     [&](auto x, auto y) { return x.second > y.second; });
+        return vector<pair<int, int>>(tmp.begin(), tmp.begin() + topk);
+    } else if (threshold != -1) {
+        vector<pair<int, int>> ret;
+        copy_if(cell_score.begin(), cell_score.end(), back_inserter(ret),
+                [&](auto x) { return x.second >= threshold; });
+        return ret;
+    } else
+        return {};
+}
+
+void Router::rip_up_and_reroute(Grid &grid, int netId, const Net &net,
+                                RoutedNet &routed, Graph &graph) {
+    auto path = net_path[netId];
+    removeDemandAlongPath(grid, netId, path);
+    path.clear();
+    routed.segments.clear();
+
+    int src = grid.gcellIndex(net.pin1.layer, net.pin1.col, net.pin1.row);
+    int dst = grid.gcellIndex(net.pin2.layer, net.pin2.col, net.pin2.row);
+
+    computeVertexCost(grid);
+    dijkstra(graph, src, dst);
+    path = reconstructPath(grid, src, dst, prev);
+
+    if (path.empty()) {
+        cerr << "Warning: using fallback routing for " << net.name << "\n";
+        path = buildFallbackPath(grid, net);
+    }
+
+    net_path[netId] = path;
+    updateDemandAlongPath(grid, netId, path);
+    path_to_seg(path);
+
+    for (size_t i = 1; i < path.size(); ++i) {
+        routed.segments.push_back(Segment{path[i - 1], path[i]});
+    }
+}
+
 RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     RoutingResult result;
     result.nets.reserve(nets.size());
@@ -270,17 +349,19 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     Graph graph = buildGraphFromGrid(grid);
     vector<Net> nnets = nets;
     Prefix2D ps = build_capacity_prefix(grid);
+    net_path.resize(nets.size());
 
     sort(nnets.begin(), nnets.end(), [&](const Net &a, const Net &b) {
         auto ka = netSortKey(ps, a);
         auto kb = netSortKey(ps, b);
-        swap(ka.first, ka.second), swap(kb.first, kb.second);
+        // swap(ka.first, ka.second), swap(kb.first, kb.second);
         if (ka.first != kb.first)
             return ka.first > kb.first;
         else
             return ka.second > kb.second;
     });
 
+    // all process is based on sorted nets(i.e. nnets) from now on
     for (size_t netIdx = 0; netIdx < nnets.size(); ++netIdx) {
         const Net &net = nnets[netIdx];
         RoutedNet routed;
@@ -289,20 +370,17 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
         int src = grid.gcellIndex(net.pin1.layer, net.pin1.col, net.pin1.row);
         int dst = grid.gcellIndex(net.pin2.layer, net.pin2.col, net.pin2.row);
 
-        computeVertexCost(grid, costs);
+        computeVertexCost(grid);
         dijkstra(graph, src, dst);
 
         vector<Coord3D> path = reconstructPath(grid, src, dst, prev);
-        // TODO: Run Dijkstra on `graph` from src -> dst (see graph.h for Graph
-        // usage). Use reconstructPath(grid, src, dst, predecessors) once you
-        // have the parent array produced by dijkstra(...) and only fall back if
-        // no legal path exists.
 
         if (path.empty()) {
             cerr << "Warning: using fallback routing for " << net.name << "\n";
             path = buildFallbackPath(grid, net);
         }
 
+        net_path[netIdx] = path;
         updateDemandAlongPath(grid, netIdx, path);
         path_to_seg(path);
 
@@ -310,12 +388,37 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
             routed.segments.push_back(Segment{path[i - 1], path[i]});
         }
         result.nets.push_back(routed);
-
-        // TODO: After a successful route, call updateDemandAlongPath() so that
-        // subsequent nets see the updated usage when computeVertexCost(...) is
-        // rerun.
     }
 
+    pair<int, int> stat = compute_gcell_overflow(grid);
+    int prev = INF;
+    if (if_reroute) {
+        for (int i = 0; i < 20; i++) {
+            stat = compute_gcell_overflow(grid);
+            if (stat.first == 0 || stat.first >= prev)
+                break;
+            else
+                prev = stat.first;
+
+            compute_all_net_scores(grid, nnets.size());
+            vector<pair<int, int>> reroute_list =
+                select_ripup_nets(nnets.size() / 50, -1);
+            // vector<pair<int, int>> reroute_list = select_ripup_nets(-1, 7);
+
+#if debug
+            cerr << i << " " << stat.first << " " << stat.second;
+            cerr << " " << reroute_list.size() << '\n';
+#endif
+            for (auto &[netId, _] : reroute_list) {
+                rip_up_and_reroute(grid, netId, nnets[netId],
+                                   result.nets[netId], graph);
+            }
+        }
+    }
+#if debug
+    stat = compute_gcell_overflow(grid);
+    cerr << "After routing, total overflow is: " << stat.first << '\n';
+#endif
     return result;
 }
 

@@ -62,6 +62,10 @@ void Grid::addDemandForNetGCell(int /*netId*/, int l, int j, int i) {
     ++demand_[gcellIndex(l, j, i)];
 }
 
+void Grid::removeDemandForNetGCell(int /*netId*/, int l, int j, int i) {
+    --demand_[gcellIndex(l, j, i)];
+}
+
 int Grid::demandByIndex(int idx) const {
     if (idx < 0 || idx >= static_cast<int>(demand_.size()))
         throw std::out_of_range("Invalid gcell index");

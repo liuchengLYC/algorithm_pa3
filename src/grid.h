@@ -34,6 +34,7 @@ class Grid {
     int demand(Coord3D c) const;
     void resetDemand();
     void addDemandForNetGCell(int netId, int l, int j, int i);
+    void removeDemandForNetGCell(int netId, int l, int j, int i);
     int demandByIndex(int idx) const;
 
     // distances / via cost

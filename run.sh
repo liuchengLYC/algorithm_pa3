@@ -32,9 +32,9 @@ EVAL="python3 utilities/pa3_evaluator.py"
 INPUT_DIR="inputs"
 OUTPUT_DIR="outputs"
 EVAL_DIR="evaluate/${name}"
-SUMMARY="${EVAL_DIR}/summary.txt"
+SUMMARY="evaluate/"${name}"_summary.txt"
 
-mkdir -p "${OUTPUT_DIR}" "${EVAL_DIR}"
+mkdir -p "${OUTPUT_DIR}"
 
 if [[ ! -x "${ROUTER}" ]]; then
     echo "找不到 router 執行檔：${ROUTER}"
