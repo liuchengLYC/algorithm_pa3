@@ -5,11 +5,13 @@
 #include <fstream>
 #include <iostream>
 #include <queue>
+#include <tuple>
+#include <unordered_set>
 #include <utility>
 using namespace std;
 const bool if_reroute = true;
 
-#define debug false
+#define debug true
 
 namespace {
 
@@ -101,6 +103,7 @@ vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
 
 void updateDemandAlongPath(Grid &grid, int netId,
                            const vector<Coord3D> &coords) {
+    grid.beginAddDemandForNet(netId);
     for (const Coord3D &c : coords) {
         grid.addDemandForNetGCell(netId, c.layer, c.col, c.row);
     }
@@ -108,6 +111,7 @@ void updateDemandAlongPath(Grid &grid, int netId,
 
 void removeDemandAlongPath(Grid &grid, int netId,
                            const vector<Coord3D> &coords) {
+    grid.beginRemoveDemandForNet(netId);
     for (const Coord3D &c : coords) {
         grid.removeDemandForNetGCell(netId, c.layer, c.col, c.row);
     }
@@ -187,6 +191,112 @@ pair<double, double> netSortKey(const Prefix2D &ps, const Net &n) {
     return make_pair(man_dist, man_dist + ratio * difficulty);
 }
 
+static long long encodeSlot(int layer, int row, int col) {
+    // 簡單壓成 64-bit key：layer(<=2), row, col 都遠小於 2^20
+    return ((long long)layer << 40) | ((long long)row << 20) | (long long)col;
+}
+
+// 完全照 pa3_evaluator.py 的 evaluate_route 邏輯來算 overflow
+std::pair<int, int>
+compute_overflow_like_evaluator(const Grid &grid, const RoutingResult &result) {
+    const int xSize = grid.xSize();
+    const int ySize = grid.ySize();
+    const int nLayers = grid.numLayers();
+
+    // demand[layer][y][x]
+    std::vector<std::vector<std::vector<int>>> demand(
+        nLayers,
+        std::vector<std::vector<int>>(ySize, std::vector<int>(xSize, 0)));
+
+    int total_overflow = 0;
+    int max_overflow = 0;
+
+    // 對每一條 net
+    for (const RoutedNet &rn : result.nets) {
+        // per-net incident-only：避免同一 net 在同一 slot 上重複計數
+        std::unordered_set<long long> used_slots;
+        used_slots.reserve(rn.segments.size() * 4);
+
+        for (const Segment &seg : rn.segments) {
+            int x1 = seg.from.col;
+            int y1 = seg.from.row;
+            int z1 = seg.from.layer;
+            int x2 = seg.to.col;
+            int y2 = seg.to.row;
+            int z2 = seg.to.layer;
+
+            if (z1 != z2) {
+                // via：z1, z2 兩層，在 (x1, y1) 位置各加一次 demand
+                for (int layer_idx : {z1, z2}) {
+                    long long key = encodeSlot(layer_idx, y1, x1);
+                    if (!used_slots.count(key)) {
+                        if (0 <= x1 && x1 < xSize && 0 <= y1 && y1 < ySize) {
+                            demand[layer_idx][y1][x1] += 1;
+                        }
+                        used_slots.insert(key);
+                    }
+                }
+            } else {
+                int layer_idx = z1;
+                char direction = grid.layerInfo(layer_idx).direction;
+
+                if (direction == 'H') {
+                    // 水平線：應該要 y1 == y2
+                    if (y1 != y2)
+                        continue;
+                    int y = y1;
+                    int x_min = std::min(x1, x2);
+                    int x_max = std::max(x1, x2);
+                    // 注意：range(x_min, x_max) -> [x_min, x_max)
+                    for (int x = x_min; x < x_max; ++x) {
+                        if (0 <= x && x < xSize && 0 <= y && y < ySize) {
+                            long long key = encodeSlot(layer_idx, y, x);
+                            if (!used_slots.count(key)) {
+                                demand[layer_idx][y][x] += 1;
+                                used_slots.insert(key);
+                            }
+                        }
+                    }
+                } else { // 'V'
+                    // 垂直線：應該要 x1 == x2
+                    if (x1 != x2)
+                        continue;
+                    int x = x1;
+                    int y_min = std::min(y1, y2);
+                    int y_max = std::max(y1, y2);
+                    for (int y = y_min; y < y_max; ++y) {
+                        if (0 <= x && x < xSize && 0 <= y && y < ySize) {
+                            long long key = encodeSlot(layer_idx, y, x);
+                            if (!used_slots.count(key)) {
+                                demand[layer_idx][y][x] += 1;
+                                used_slots.insert(key);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 用 grid.capacity(l, x, y) 來當成 capacities[layer][y][x]
+    for (int l = 0; l < nLayers; ++l) {
+        for (int y = 0; y < ySize; ++y) {
+            for (int x = 0; x < xSize; ++x) {
+                int cap = grid.capacity(l, x, y);
+                int dem = demand[l][y][x];
+                int of = dem - cap;
+                if (of > 0) {
+                    total_overflow += of;
+                    if (of > max_overflow)
+                        max_overflow = of;
+                }
+            }
+        }
+    }
+
+    return {total_overflow, max_overflow};
+}
+
 } // namespace
 
 Router::Router() = default;
@@ -195,7 +305,6 @@ Router::Router(const Grid &grid) {
     const int total = totalVertices(grid);
     dist.assign(total, INF);
     prev.assign(total, -1);
-    stamp.assign(total, 0);
     costs.assign(total, INF);
     cell_overflow.assign(total, 0);
 }
@@ -417,6 +526,8 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     }
 #if debug
     stat = compute_gcell_overflow(grid);
+    cerr << "After routing, total overflow is: " << stat.first << '\n';
+    stat = compute_overflow_like_evaluator(grid, result);
     cerr << "After routing, total overflow is: " << stat.first << '\n';
 #endif
     return result;

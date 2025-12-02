@@ -58,10 +58,8 @@ class Router {
                             RoutedNet &routed, Graph &graph);
 
   private:
-    // stamp is quite useless now
     std::vector<int> dist;
     std::vector<int> prev;
-    std::vector<int> stamp;
     std::vector<int> costs;
     std::vector<int> cell_overflow;
     std::vector<std::pair<int, int>> cell_score;

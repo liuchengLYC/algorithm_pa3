@@ -12,6 +12,11 @@ void Grid::resize(int xSize, int ySize) {
     gridlSize_ = total;
     capacity_.assign(total, 0);
     demand_.assign(total, 0);
+    addStamp_.assign(total, 0);
+    removeStamp_.assign(total, 0);
+    currentAddTag_ = 0;
+    currentRemoveTag_ = 0;
+
     W_.assign(xSize_ > 0 ? xSize_ - 1 : 0, 0);
     H_.assign(ySize_ > 0 ? ySize_ - 1 : 0, 0);
 }
@@ -55,15 +60,52 @@ int Grid::demand(Coord3D c) const {
     return demand_[gcellIndex(c.layer, c.col, c.row)];
 }
 
-void Grid::resetDemand() { std::fill(demand_.begin(), demand_.end(), 0); }
+void Grid::resetDemand() {
+    std::fill(demand_.begin(), demand_.end(), 0);
+    std::fill(addStamp_.begin(), addStamp_.end(), 0);
+    std::fill(removeStamp_.begin(), removeStamp_.end(), 0);
+    currentAddTag_ = 0;
+    currentRemoveTag_ = 0;
+}
 
-// netid is useful when rerouting
+void Grid::beginAddDemandForNet(int /*netId*/) {
+    ++currentAddTag_;
+    if (currentAddTag_ == 0) {
+        // 避免 int overflow，重置 stamp
+        std::fill(addStamp_.begin(), addStamp_.end(), 0);
+        currentAddTag_ = 1;
+    }
+}
+
 void Grid::addDemandForNetGCell(int /*netId*/, int l, int j, int i) {
-    ++demand_[gcellIndex(l, j, i)];
+    int idx = gcellIndex(l, j, i);
+    if (idx < 0 || idx >= gridlSize_)
+        throw std::out_of_range("Invalid gcell index in addDemandForNetGCell");
+
+    if (addStamp_[idx] != currentAddTag_) {
+        addStamp_[idx] = currentAddTag_;
+        ++demand_[idx];
+    }
+}
+
+void Grid::beginRemoveDemandForNet(int /*netId*/) {
+    ++currentRemoveTag_;
+    if (currentRemoveTag_ == 0) {
+        std::fill(removeStamp_.begin(), removeStamp_.end(), 0);
+        currentRemoveTag_ = 1;
+    }
 }
 
 void Grid::removeDemandForNetGCell(int /*netId*/, int l, int j, int i) {
-    --demand_[gcellIndex(l, j, i)];
+    int idx = gcellIndex(l, j, i);
+    if (idx < 0 || idx >= gridlSize_)
+        throw std::out_of_range(
+            "Invalid gcell index in removeDemandForNetGCell");
+
+    if (removeStamp_[idx] != currentRemoveTag_) {
+        removeStamp_[idx] = currentRemoveTag_;
+        --demand_[idx];
+    }
 }
 
 int Grid::demandByIndex(int idx) const {

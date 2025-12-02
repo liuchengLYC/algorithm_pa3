@@ -32,9 +32,18 @@ class Grid {
 
     int demand(int l, int j, int i) const;
     int demand(Coord3D c) const;
+
+    // reset all demand / stamps
     void resetDemand();
+
+    // incident-only demand interface
+    void beginAddDemandForNet(int netId);
     void addDemandForNetGCell(int netId, int l, int j, int i);
+
+    // rip-up interface
+    void beginRemoveDemandForNet(int netId);
     void removeDemandForNetGCell(int netId, int l, int j, int i);
+
     int demandByIndex(int idx) const;
 
     // distances / via cost
@@ -58,6 +67,11 @@ class Grid {
     // size: [2 * xSize * ySize]
     std::vector<int> capacity_;
     std::vector<int> demand_;
+
+    std::vector<int> addStamp_;
+    std::vector<int> removeStamp_;
+    int currentAddTag_ = 0;
+    int currentRemoveTag_ = 0;
 
     std::vector<int> W_; // size xSize-1
     std::vector<int> H_; // size ySize-1
