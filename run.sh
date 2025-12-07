@@ -20,7 +20,7 @@ else
 fi
 
 echo "=== Running make ==="
-make clean
+# make clean
 if ! make; then
     echo "make 失敗，請修正 compile errors"
     exit 1

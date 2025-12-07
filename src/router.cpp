@@ -11,11 +11,12 @@
 using namespace std;
 const bool if_reroute = true;
 
-#define debug true
+#define debug false
 
 namespace {
 
 constexpr int OVERFLOW_WEIGHT = 300000;
+constexpr double ALMOST_FULL_WEIGHT = 3000.0;
 using Prefix2D = vector<vector<long long>>;
 
 int totalVertices(const Grid &grid) { return grid.gridSize(); }
@@ -52,36 +53,47 @@ vector<Coord3D> reconstructPath(const Grid &grid, int src, int dst,
 vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
     vector<Coord3D> ans;
     char dir = grid.layerInfo(net.pin1.layer).direction;
-    int dx = (net.pin1.col < net.pin2.col) ? 1 : -1,
-        dy = (net.pin1.row < net.pin2.row) ? 1 : -1;
+    int dx = (net.pin1.col < net.pin2.col) ? 1 : -1;
+    int dy = (net.pin1.row < net.pin2.row) ? 1 : -1;
 
     Coord3D cur = net.pin1;
     ans.push_back(cur);
+
     if (dir == 'H') {
         while (cur.col != net.pin2.col) {
             cur.col += dx;
             ans.push_back(cur);
         }
-        cur.layer ^= 1;
-        ans.push_back(cur);
-        while (cur.row != net.pin2.row) {
-            cur.row += dy;
-            ans.push_back(cur);
+        if (cur.row != net.pin2.row) {
+            if (grid.layerInfo(cur.layer).direction != 'V') {
+                cur.layer ^= 1;
+                ans.push_back(cur);
+            }
+            while (cur.row != net.pin2.row) {
+                cur.row += dy;
+                ans.push_back(cur);
+            }
         }
         if (cur.layer != net.pin2.layer) {
             cur.layer ^= 1;
             ans.push_back(cur);
         }
+
     } else {
         while (cur.row != net.pin2.row) {
             cur.row += dy;
             ans.push_back(cur);
         }
-        cur.layer ^= 1;
-        ans.push_back(cur);
-        while (cur.col != net.pin2.col) {
-            cur.col += dx;
-            ans.push_back(cur);
+
+        if (cur.col != net.pin2.col) {
+            if (grid.layerInfo(cur.layer).direction != 'H') {
+                cur.layer ^= 1;
+                ans.push_back(cur);
+            }
+            while (cur.col != net.pin2.col) {
+                cur.col += dx;
+                ans.push_back(cur);
+            }
         }
         if (cur.layer != net.pin2.layer) {
             cur.layer ^= 1;
@@ -89,16 +101,6 @@ vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
         }
     }
     return ans;
-    // TODO: Produce a deterministic Manhattan-style backup route when
-    // Dijkstra fails. Start from net.pin1 (source) and peek at
-    // grid.layerInfo(layer).direction to decide whether you need to swap
-    // layers so that the preferred direction (H or V) matches the axis you
-    // are about to walk. Move one gcell at a time by
-    // incrementing/decrementing Coord3D::col for horizontal moves and
-    // Coord3D::row for vertical moves until you reach net.pin2. Whenever
-    // you change layer, append the intermediate Coord3D so downstream code
-    // can emit via segments. Return the ordered list of coordinates from
-    // source to target.
 }
 
 void updateDemandAlongPath(Grid &grid, int netId,
@@ -191,92 +193,6 @@ pair<double, double> netSortKey(const Prefix2D &ps, const Net &n) {
     return make_pair(man_dist, man_dist + ratio * difficulty);
 }
 
-// 離線重算 overflow：完全依照 RoutingResult 來算 incident-only demand
-std::pair<int, int> compute_offline_overflow(const Grid &grid,
-                                             const RoutingResult &result) {
-    const int total = grid.gridSize();
-    std::vector<int> demand(total, 0);
-    std::vector<int> stamp(total, 0);
-    int currentTag = 0;
-
-    // 對每一條 net
-    for (size_t netId = 0; netId < result.nets.size(); ++netId) {
-        const RoutedNet &rn = result.nets[netId];
-
-        // 每條 net 用自己的 tag，確保「這條 net 在某格只算一次」
-        ++currentTag;
-        if (currentTag == 0) {
-            std::fill(stamp.begin(), stamp.end(), 0);
-            currentTag = 1;
-        }
-
-        // 對 net 的每一段 segment
-        for (const Segment &seg : rn.segments) {
-            Coord3D a = seg.from;
-            Coord3D b = seg.to;
-
-            if (a.layer == b.layer && a.row == b.row) {
-                // 水平線：同層、同行，掃所有 column
-                int l = a.layer;
-                int i = a.row;
-                int j1 = std::min(a.col, b.col);
-                int j2 = std::max(a.col, b.col);
-                for (int j = j1; j <= j2; ++j) {
-                    int idx = grid.gcellIndex(l, j, i);
-                    if (stamp[idx] != currentTag) {
-                        stamp[idx] = currentTag;
-                        ++demand[idx];
-                    }
-                }
-            } else if (a.layer == b.layer && a.col == b.col) {
-                // 垂直線：同層、同列，掃所有 row
-                int l = a.layer;
-                int j = a.col;
-                int i1 = std::min(a.row, b.row);
-                int i2 = std::max(a.row, b.row);
-                for (int i = i1; i <= i2; ++i) {
-                    int idx = grid.gcellIndex(l, j, i);
-                    if (stamp[idx] != currentTag) {
-                        stamp[idx] = currentTag;
-                        ++demand[idx];
-                    }
-                }
-            } else {
-                // via：同一格 (row, col)，跨 layer
-                int j = a.col;
-                int i = a.row;
-                int l1 = std::min(a.layer, b.layer);
-                int l2 = std::max(a.layer, b.layer);
-                for (int l = l1; l <= l2; ++l) {
-                    int idx = grid.gcellIndex(l, j, i);
-                    if (stamp[idx] != currentTag) {
-                        stamp[idx] = currentTag;
-                        ++demand[idx];
-                    }
-                }
-            }
-        }
-    }
-
-    // 把 demand 轉成 overflow
-    int total_overflow = 0;
-    int max_overflow = 0;
-
-    for (int idx = 0; idx < total; ++idx) {
-        Coord3D c = grid.fromIndex(idx);
-        int cap = grid.capacity(c);
-        int of = demand[idx] - cap;
-        if (of < 0)
-            of = 0;
-        if (of > 0)
-            total_overflow += of;
-        if (of > max_overflow)
-            max_overflow = of;
-    }
-
-    return {total_overflow, max_overflow};
-}
-
 } // namespace
 
 Router::Router() = default;
@@ -314,7 +230,6 @@ Graph Router::buildGraphFromGrid(const Grid &grid) {
 void Router::computeVertexCost(const Grid &grid) {
     const int total = totalVertices(grid);
     auto cfunc = [&](int x) {
-        constexpr double ALMOST_FULL_WEIGHT = 10000.0;
         int dm = grid.demandByIndex(x), cap = grid.capacity(grid.fromIndex(x));
         if (dm >= cap)
             return (OVERFLOW_WEIGHT) * (dm - cap + 1);
@@ -323,6 +238,7 @@ void Router::computeVertexCost(const Grid &grid) {
             ALMOST_FULL_WEIGHT);
         return almost_flow_weight;
     };
+
     for (int i = 0; i < total; i++) {
         costs[i] = cfunc(i);
     }
@@ -397,6 +313,8 @@ vector<pair<int, int>> Router::select_ripup_nets(int topk, int threshold) {
         vector<pair<int, int>> ret;
         copy_if(cell_score.begin(), cell_score.end(), back_inserter(ret),
                 [&](auto x) { return x.second >= threshold; });
+        // sort(ret.begin(), ret.end(),
+        //      [&](auto x, auto y) { return x.second > y.second; });
         return ret;
     } else
         return {};
@@ -445,7 +363,7 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
         auto kb = netSortKey(ps, b);
         // swap(ka.first, ka.second), swap(kb.first, kb.second);
         if (ka.first != kb.first)
-            return ka.first > kb.first;
+            return ka.first < kb.first;
         else
             return ka.second > kb.second;
     });
@@ -490,9 +408,9 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
                 prev = stat.first;
 
             compute_all_net_scores(grid, nnets.size());
-            vector<pair<int, int>> reroute_list =
-                select_ripup_nets(nnets.size() / 50, -1);
-            // vector<pair<int, int>> reroute_list = select_ripup_nets(-1, 7);
+            // vector<pair<int, int>> reroute_list =
+            //     select_ripup_nets(nnets.size() / 10, -1);
+            vector<pair<int, int>> reroute_list = select_ripup_nets(-1, 1);
 
 #if debug
             cerr << i << " " << stat.first << " " << stat.second;
@@ -506,8 +424,6 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     }
 #if debug
     stat = compute_gcell_overflow(grid);
-    cerr << "After routing, total overflow is: " << stat.first << '\n';
-    stat = compute_offline_overflow(grid, result);
     cerr << "After routing, total overflow is: " << stat.first << '\n';
 #endif
     return result;

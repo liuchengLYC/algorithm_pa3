@@ -37,13 +37,13 @@ def generate_cap():
         # Layer 0
         f.write("Metal1 H\n")
         for _ in range(ySize):
-            row = [str(rng.randint(2, 5)) for _ in range(xSize)]
+            row = [str(rng.randint(2, 4)) for _ in range(xSize)]
             f.write(" ".join(row) + "\n")
 
         # Layer 1
         f.write("Metal2 V\n")
         for _ in range(ySize):
-            row = [str(rng.randint(2, 5)) for _ in range(xSize)]
+            row = [str(rng.randint(2, 4)) for _ in range(xSize)]
             f.write(" ".join(row) + "\n")
 
     print(f"[OK] 生成 {cap_output}")
