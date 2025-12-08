@@ -14,9 +14,9 @@ const bool if_reroute = true;
 
 namespace {
 
-constexpr int OVERFLOW_WEIGHT = 300000;
+constexpr int OVERFLOW_WEIGHT = 100000;
 constexpr double ALMOST_FULL_WEIGHT = 3000.0;
-constexpr int HISTORY_INCREMENT = 4000;
+constexpr int HISTORY_INCREMENT = 12000;
 constexpr double COST_BASE_POW = 2.0;
 
 using Prefix2D = vector<vector<long long>>;
@@ -241,7 +241,7 @@ void Router::computeVertexCost(const Grid &grid) {
         if (dm >= cap) {
             int overflow = dm - cap;
             double congestion_penalty =
-                OVERFLOW_WEIGHT * std::pow(COST_BASE_POW, overflow);
+                OVERFLOW_WEIGHT * pow(COST_BASE_POW, overflow);
             return static_cast<int>(base_cost + hist + congestion_penalty);
         } else {
             double ratio_cost =
@@ -413,7 +413,7 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     pair<int, int> stat = compute_gcell_overflow(grid);
 
     if (if_reroute) {
-        for (int i = 0; i < 50; i++) {
+        for (int i = 0; i < 100; i++) {
             stat = compute_gcell_overflow(grid);
             if (stat.first == 0)
                 break;
