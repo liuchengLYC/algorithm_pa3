@@ -64,5 +64,6 @@ class Router {
     std::vector<int> cell_overflow;
     std::vector<std::pair<int, int>> cell_score;
     std::vector<std::vector<Coord3D>> net_path;
+    std::vector<int> history_costs;
 };
 #endif // ROUTER_H

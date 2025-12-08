@@ -2,6 +2,7 @@
 #include "router.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <queue>
@@ -15,6 +16,9 @@ namespace {
 
 constexpr int OVERFLOW_WEIGHT = 300000;
 constexpr double ALMOST_FULL_WEIGHT = 3000.0;
+constexpr int HISTORY_INCREMENT = 4000;
+constexpr double COST_BASE_POW = 2.0;
+
 using Prefix2D = vector<vector<long long>>;
 
 int totalVertices(const Grid &grid) { return grid.gridSize(); }
@@ -201,6 +205,7 @@ Router::Router(const Grid &grid) {
     prev.assign(total, -1);
     costs.assign(total, INF);
     cell_overflow.assign(total, 0);
+    history_costs.assign(total, 0);
 }
 
 Graph Router::buildGraphFromGrid(const Grid &grid) {
@@ -228,13 +233,22 @@ Graph Router::buildGraphFromGrid(const Grid &grid) {
 void Router::computeVertexCost(const Grid &grid) {
     const int total = totalVertices(grid);
     auto cfunc = [&](int x) {
-        int dm = grid.demandByIndex(x), cap = grid.capacity(grid.fromIndex(x));
-        if (dm >= cap)
-            return (OVERFLOW_WEIGHT) * (dm - cap + 1);
-        int almost_flow_weight = static_cast<int>(
-            (static_cast<double>(dm) / static_cast<double>(cap)) *
-            ALMOST_FULL_WEIGHT);
-        return almost_flow_weight;
+        int dm = grid.demandByIndex(x);
+        int cap = grid.capacity(grid.fromIndex(x));
+        int hist = history_costs[x];
+        int base_cost = 1;
+
+        if (dm >= cap) {
+            int overflow = dm - cap;
+            double congestion_penalty =
+                OVERFLOW_WEIGHT * std::pow(COST_BASE_POW, overflow);
+            return static_cast<int>(base_cost + hist + congestion_penalty);
+        } else {
+            double ratio_cost =
+                (static_cast<double>(dm) / static_cast<double>(cap)) *
+                ALMOST_FULL_WEIGHT;
+            return static_cast<int>(base_cost + hist + ratio_cost);
+        }
     };
 
     for (int i = 0; i < total; i++) {
@@ -351,6 +365,7 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     result.nets.reserve(nets.size());
 
     grid.resetDemand();
+    fill(history_costs.begin(), history_costs.end(), 0);
     Graph graph = buildGraphFromGrid(grid);
     vector<Net> nnets = nets;
     Prefix2D ps = build_capacity_prefix(grid);
@@ -396,14 +411,18 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     }
 
     pair<int, int> stat = compute_gcell_overflow(grid);
-    int prev = INF;
+
     if (if_reroute) {
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 50; i++) {
             stat = compute_gcell_overflow(grid);
-            if (stat.first == 0 || stat.first >= prev)
+            if (stat.first == 0)
                 break;
-            else
-                prev = stat.first;
+
+            for (size_t idx = 0; idx < cell_overflow.size(); ++idx) {
+                if (cell_overflow[idx] > 0) {
+                    history_costs[idx] += HISTORY_INCREMENT;
+                }
+            }
 
             compute_all_net_scores(grid, nnets.size());
             // vector<pair<int, int>> reroute_list =
