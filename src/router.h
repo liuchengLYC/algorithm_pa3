@@ -43,6 +43,8 @@ class Router {
     /// They can also write their own version if they prefer.
     void dijkstra(const Graph &g, int source, int target);
 
+    void astar(const Grid &grid, const Graph &g, int source, int target);
+
     std::pair<int, int> compute_gcell_overflow(const Grid &grid);
 
     /// compute all net scores to determine who to be ripped-up

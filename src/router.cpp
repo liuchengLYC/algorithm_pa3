@@ -2,10 +2,12 @@
 #include "router.h"
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iostream>
 #include <queue>
+#include <random>
 #include <utility>
 using namespace std;
 const bool if_reroute = true;
@@ -42,14 +44,6 @@ vector<Coord3D> reconstructPath(const Grid &grid, int src, int dst,
         reverse(tmp.begin(), tmp.end());
         return tmp;
     }
-    // TODO: Starting from targetIdx, follow the `prev` parent array
-    // (produced by dijkstra) until you reach sourceIdx or hit -1. You
-    // should store each vertex index you visit so you can reverse the order
-    // later. Use grid.fromIndex(idx) to convert each flat index back to a
-    // Coord3D {layer, col, row}. The resulting vector should go from the
-    // source coordinate to the target coordinate. Return an empty vector if
-    // the target is unreachable (i.e., prev chain does not lead back to the
-    // source).
 }
 
 vector<Coord3D> buildFallbackPath(const Grid &grid, const Net &net) {
@@ -218,10 +212,11 @@ Graph Router::buildGraphFromGrid(const Grid &grid) {
                     g.addEdge(gi(lay - 1, j, i), gi(lay, j, i),
                               grid.wlViaCost());
                 if (grid.layerInfo(lay).direction == 'H' &&
-                    i < grid.ySize() - 1 && j < grid.xSize() - 1)
+                    j < grid.xSize() - 1)
                     g.addEdge(gi(lay, j, i), gi(lay, j + 1, i),
                               grid.horizontalDist(j));
-                else if (i < grid.ySize() - 1 && j < grid.xSize() - 1)
+                else if (grid.layerInfo(lay).direction == 'V' &&
+                         i < grid.ySize() - 1)
                     g.addEdge(gi(lay, j, i), gi(lay, j, i + 1),
                               grid.verticalDist(i));
             }
@@ -257,7 +252,6 @@ void Router::computeVertexCost(const Grid &grid) {
 }
 
 void Router::dijkstra(const Graph &g, int source, int target) {
-    // dist -> distance(or cost) in dijkstra, cost -> cost to step on gcell
     fill(dist.begin(), dist.end(), INF);
     fill(prev.begin(), prev.end(), -1);
     using pii = pair<int, int>;
@@ -278,6 +272,81 @@ void Router::dijkstra(const Graph &g, int source, int target) {
                 pq.push({e.to, nc});
                 prev[e.to] = v;
                 dist[e.to] = nc;
+            }
+        }
+    }
+}
+
+void Router::astar(const Grid &grid, const Graph &g, int source, int target) {
+    fill(dist.begin(), dist.end(), INF);
+    fill(prev.begin(), prev.end(), -1);
+
+    int minHor = INF;
+    int minVer = INF;
+
+    if (grid.xSize() > 1) {
+        for (int j = 0; j < grid.xSize() - 1; ++j) {
+            minHor = min(minHor, grid.horizontalDist(j));
+        }
+    } else {
+        minHor = 0;
+    }
+
+    if (grid.ySize() > 1) {
+        for (int i = 0; i < grid.ySize() - 1; ++i) {
+            minVer = min(minVer, grid.verticalDist(i));
+        }
+    } else {
+        minVer = 0;
+    }
+
+    const int viaCost = grid.wlViaCost();
+    const Coord3D tgt = grid.fromIndex(target);
+
+    auto h = [&](int v) -> int {
+        const Coord3D cur = grid.fromIndex(v);
+        int dx = abs(cur.col - tgt.col);
+        int dy = abs(cur.row - tgt.row);
+        int dz = abs(cur.layer - tgt.layer);
+        long long hv = 1LL * dx * minHor + 1LL * dy * minVer +
+                       1LL * dz * viaCost + (dx + dy + dz);
+        if (hv >= INF)
+            return INF;
+        return (int)hv;
+    };
+
+    using pli = pair<long long, int>;
+    priority_queue<pli, vector<pli>, greater<pli>> pq;
+    long long g0 = costs[source];
+    if (g0 >= INF)
+        g0 = INF;
+
+    dist[source] = (int)g0;
+    pq.push({g0 + h(source), source});
+
+    while (!pq.empty()) {
+        auto [fcur, v] = pq.top();
+        pq.pop();
+
+        if (v == target)
+            return;
+        if (dist[v] == INF)
+            continue;
+
+        long long expectedF = 1LL * dist[v] + h(v);
+        if (fcur != expectedF)
+            continue;
+
+        for (auto &e : g.adj(v)) {
+            if (dist[v] == INF)
+                continue;
+            long long ng = 1LL * dist[v] + costs[e.to] + e.baseCost;
+            if (ng >= INF)
+                ng = INF;
+            if (ng < dist[e.to]) {
+                dist[e.to] = (int)ng;
+                prev[e.to] = v;
+                pq.push({ng + h(e.to), e.to});
             }
         }
     }
@@ -325,8 +394,6 @@ vector<pair<int, int>> Router::select_ripup_nets(int topk, int threshold) {
         vector<pair<int, int>> ret;
         copy_if(cell_score.begin(), cell_score.end(), back_inserter(ret),
                 [&](auto x) { return x.second >= threshold; });
-        // sort(ret.begin(), ret.end(),
-        //      [&](auto x, auto y) { return x.second > y.second; });
         return ret;
     } else
         return {};
@@ -343,7 +410,7 @@ void Router::rip_up_and_reroute(Grid &grid, int netId, const Net &net,
     int dst = grid.gcellIndex(net.pin2.layer, net.pin2.col, net.pin2.row);
 
     computeVertexCost(grid);
-    dijkstra(graph, src, dst);
+    astar(grid, graph, src, dst);
     path = reconstructPath(grid, src, dst, prev);
 
     if (path.empty()) {
@@ -361,6 +428,15 @@ void Router::rip_up_and_reroute(Grid &grid, int netId, const Net &net,
 }
 
 RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
+    const auto t_start = std::chrono::steady_clock::now();
+    const double TIME_BUDGET_SEC = 8.5 * 60.0;
+    auto time_up = [&]() -> bool {
+        double el = std::chrono::duration<double>(
+                        std::chrono::steady_clock::now() - t_start)
+                        .count();
+        return el >= TIME_BUDGET_SEC;
+    };
+
     RoutingResult result;
     result.nets.reserve(nets.size());
 
@@ -391,7 +467,7 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
         int dst = grid.gcellIndex(net.pin2.layer, net.pin2.col, net.pin2.row);
 
         computeVertexCost(grid);
-        dijkstra(graph, src, dst);
+        astar(grid, graph, src, dst);
 
         vector<Coord3D> path = reconstructPath(grid, src, dst, prev);
 
@@ -412,22 +488,48 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
 
     pair<int, int> stat = compute_gcell_overflow(grid);
 
+    // if (if_reroute) {
+    //     for (int i = 0; i < 100; i++) {
+    //         stat = compute_gcell_overflow(grid);
+    //         if (stat.first == 0)
+    //             break;
+
+    //         for (size_t idx = 0; idx < cell_overflow.size(); ++idx) {
+    //             if (cell_overflow[idx] > 0) {
+    //                 history_costs[idx] += HISTORY_INCREMENT;
+    //             }
+    //         }
+
+    //         compute_all_net_scores(grid, nnets.size());
+    //         // vector<pair<int, int>> reroute_list =
+    //         //     select_ripup_nets(nnets.size() / 10, -1);
+    //         vector<pair<int, int>> reroute_list = select_ripup_nets(-1, 1);
+
     if (if_reroute) {
+        int best_overflow = stat.first;
+        RoutingResult best_result = result;
+        random_device rd;
+        static mt19937 rng(rd());
+
         for (int i = 0; i < 100; i++) {
-            stat = compute_gcell_overflow(grid);
-            if (stat.first == 0)
+            if (stat.first == 0 || time_up())
                 break;
 
             for (size_t idx = 0; idx < cell_overflow.size(); ++idx) {
                 if (cell_overflow[idx] > 0) {
-                    history_costs[idx] += HISTORY_INCREMENT;
+                    history_costs[idx] +=
+                        HISTORY_INCREMENT * cell_overflow[idx];
                 }
             }
 
             compute_all_net_scores(grid, nnets.size());
-            // vector<pair<int, int>> reroute_list =
-            //     select_ripup_nets(nnets.size() / 10, -1);
-            vector<pair<int, int>> reroute_list = select_ripup_nets(-1, 1);
+            vector<pair<int, int>> reroute_list;
+            if (i % 2)
+                reroute_list = select_ripup_nets(-1, 1);
+            else
+                reroute_list = select_ripup_nets(-1, 0);
+
+            shuffle(reroute_list.begin(), reroute_list.end(), rng);
 
 #if debug
             cerr << i << " " << stat.first << " " << stat.second;
@@ -437,7 +539,15 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
                 rip_up_and_reroute(grid, netId, nnets[netId],
                                    result.nets[netId], graph);
             }
+            stat = compute_gcell_overflow(grid);
+            if (stat.first < best_overflow) {
+                best_overflow = stat.first;
+                best_result = result;
+            }
+            if (stat.first == 0)
+                break;
         }
+        result = best_result;
     }
 #if debug
     stat = compute_gcell_overflow(grid);
