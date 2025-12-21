@@ -19,7 +19,7 @@ namespace {
 constexpr int OVERFLOW_WEIGHT = 100000;
 constexpr double ALMOST_FULL_WEIGHT = 3000.0;
 constexpr int HISTORY_INCREMENT = 12000;
-constexpr double COST_BASE_POW = 2.0;
+constexpr double COST_BASE_POW = 2;
 
 using Prefix2D = vector<vector<long long>>;
 
@@ -237,7 +237,9 @@ void Router::computeVertexCost(const Grid &grid) {
             int overflow = dm - cap;
             double congestion_penalty =
                 OVERFLOW_WEIGHT * pow(COST_BASE_POW, overflow);
-            return static_cast<int>(base_cost + hist + congestion_penalty);
+            return (base_cost + hist +
+                    static_cast<int>(
+                        min(congestion_penalty, static_cast<double>(INF))));
         } else {
             double ratio_cost =
                 (static_cast<double>(dm) / static_cast<double>(cap)) *
@@ -391,10 +393,29 @@ vector<pair<int, int>> Router::select_ripup_nets(int topk, int threshold) {
                      [&](auto x, auto y) { return x.second > y.second; });
         return vector<pair<int, int>>(tmp.begin(), tmp.begin() + topk);
     } else if (threshold != -1) {
+        // vector<pair<int, int>> ret;
+        // copy_if(cell_score.begin(), cell_score.end(), back_inserter(ret),
+        //         [&](auto x) { return x.second >= threshold; });
+        // return ret;
+
         vector<pair<int, int>> ret;
+        static mt19937 rng(random_device{}());
+        const double P_PICK_ZERO = 0.02;
+        const int ZERO_CAP = max(1, (int)cell_score.size() / 50); // 2%
+        bernoulli_distribution coin(P_PICK_ZERO);
+        int zero_added = 0;
         copy_if(cell_score.begin(), cell_score.end(), back_inserter(ret),
-                [&](auto x) { return x.second >= threshold; });
+                [&](const auto &x) {
+                    if (x.second >= threshold)
+                        return true;
+                    if (x.second == 0 && zero_added < ZERO_CAP && coin(rng)) {
+                        ++zero_added;
+                        return true;
+                    }
+                    return false;
+                });
         return ret;
+
     } else
         return {};
 }
@@ -429,7 +450,7 @@ void Router::rip_up_and_reroute(Grid &grid, int netId, const Net &net,
 
 RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
     const auto t_start = std::chrono::steady_clock::now();
-    const double TIME_BUDGET_SEC = 8.5 * 60.0;
+    const double TIME_BUDGET_SEC = 9 * 60.0;
     auto time_up = [&]() -> bool {
         double el = std::chrono::duration<double>(
                         std::chrono::steady_clock::now() - t_start)
@@ -523,13 +544,10 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
             }
 
             compute_all_net_scores(grid, nnets.size());
-            vector<pair<int, int>> reroute_list;
-            if (i % 2)
-                reroute_list = select_ripup_nets(-1, 1);
-            else
-                reroute_list = select_ripup_nets(-1, 0);
-
-            shuffle(reroute_list.begin(), reroute_list.end(), rng);
+            vector<pair<int, int>> reroute_list = select_ripup_nets(-1, 1);
+            // shuffle(reroute_list.begin(), reroute_list.end(), rng);
+            sort(reroute_list.begin(), reroute_list.end(),
+                 [](auto &x, auto &y) { return x.second > y.second; });
 
 #if debug
             cerr << i << " " << stat.first << " " << stat.second;
@@ -540,6 +558,7 @@ RoutingResult Router::runRouting(Grid &grid, const vector<Net> &nets) {
                                    result.nets[netId], graph);
             }
             stat = compute_gcell_overflow(grid);
+
             if (stat.first < best_overflow) {
                 best_overflow = stat.first;
                 best_result = result;
